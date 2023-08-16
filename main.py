@@ -1,7 +1,31 @@
 import cv2
 import os
-import numpy as np
-import math
+
+
+
+def rotate_and_crop_image(image, angle):
+    # Oblicz środek obrazu
+    h, w = image.shape[:2]
+    center = (w / 2, h / 2)
+
+    # Utwórz macierz obrotu
+    M = cv2.getRotationMatrix2D(center, angle, 1.0)
+
+    # Obróć obraz
+    rotated = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255))
+
+    # Przytnij białe marginesy
+    gray = cv2.cvtColor(rotated, cv2.COLOR_BGR2GRAY)
+    _, thresholded = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY_INV)
+    contours, _ = cv2.findContours(thresholded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    if contours:
+        c = max(contours, key=cv2.contourArea)  # znajdź największy kontur
+        x, y, w, h = cv2.boundingRect(c)
+        rotated_and_cropped = rotated[y:y+h, x:x+w]
+        return rotated_and_cropped
+    else:
+        return rotated
 
 
 def extract_images_from_scan(scan_path, output_dir, total_count):
@@ -13,47 +37,33 @@ def extract_images_from_scan(scan_path, output_dir, total_count):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     _, thresholded = cv2.threshold(gray, 245, 255, cv2.THRESH_BINARY_INV)
 
-
-    # Wykrywanie krawędzi za pomocą Canny
-    edges = cv2.Canny(thresholded, 50, 150, apertureSize=3)
-
-    # Wykrywanie linii za pomocą transformacji Hougha
-    lines = cv2.HoughLines(edges, 1, np.pi/180, 200)
-
-    # Sprawdzanie czy są jakieś linie do przetworzenia
-    if lines is not None:
-        rotation_angles = []
-
-        for rho, theta in lines[:, 0]:
-            # Obliczanie kąta obrotu na podstawie linii
-            a = np.cos(theta)
-            b = np.sin(theta)
-            if b:
-                angle = math.degrees(math.atan(-a/b))
-                if -30 <= angle <= 30:  # Jeśli kąt jest między -30 a 30 stopniami
-                    rotation_angles.append(angle)
-
-        # Obliczanie średniego kąta obrotu i obracanie obrazu
-        if rotation_angles:
-            avg_angle = np.mean(rotation_angles)
-            center = tuple(np.array(image.shape[1::-1]) / 2)
-            rot_mat = cv2.getRotationMatrix2D(center, avg_angle, 1.0)
-            image = cv2.warpAffine(image, rot_mat, image.shape[1::-1], flags=cv2.INTER_LINEAR)
-
-
     contours, _ = cv2.findContours(thresholded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     for index, c in enumerate(contours):
         x, y, w, h = cv2.boundingRect(c)
         if w > 250 and h > 250 and w < 2000 and h < 2000:
+            # Oblicz kąt obrotu dla konturu
+            _, _, angle = cv2.minAreaRect(c)
+
+            # Jeśli kąt jest większy niż 45 stopni, przekształć go
+            # (zakładając, że chcemy mały kąt obrotu)
+            if angle > 45:
+                angle -= 90
+
+            # Wycięcie regionu zainteresowania
             roi = image[y:y+h, x:x+w]
-            cv2.imwrite(os.path.join(output_dir, f'image_{total_count}.png'), roi)
+
+            # Obróć wycięty obraz
+            rotated_roi = rotate_and_crop_image(roi, angle)
+
+            cv2.imwrite(os.path.join(output_dir, f'image_{total_count}.png'), rotated_roi)
             total_count += 1
             img_count += 1
 
     if img_count < 3:
-        # cv2.imshow("Input", image)
-        # cv2.waitKey(0)
+        print(f"Error extracting images from {scan_path} - found {img_count} images")
+        cv2.imshow("Input", image)
+        cv2.waitKey(0)
         img_extraction_error = True
 
     return img_count, img_extraction_error
