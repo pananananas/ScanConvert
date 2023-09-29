@@ -8,8 +8,9 @@ max_image_height = 3000
 
 number_of_images_per_scan = 3
 
-input_dir = "Scans/Album2"
-output_dir = "Images/Album2"
+# Inpt and output folders (relative to main.py)
+input_dir = "Scans/Album1"
+output_dir = "Images/Album1"
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
